@@ -1,6 +1,7 @@
 #include "ACFCharacterMovementComponent.h"
 
 #include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
 #include "ACFCustomMovementModes.h"
 
 UACFCharacterMovementComponent::UACFCharacterMovementComponent()
@@ -12,6 +13,8 @@ void UACFCharacterMovementComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ClimbQueryParams.AddIgnoredActor(GetOwner());
+
+	AnimInstance = GetCharacterOwner()->GetMesh()->GetAnimInstance();
 }
 
 void UACFCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -292,6 +295,12 @@ float UACFCharacterMovementComponent::GetMaxAcceleration() const
 FQuat UACFCharacterMovementComponent::GetClimbingRotation(float DeltaTime) const 
 {
 	const FQuat Current = UpdatedComponent->GetComponentQuat();
+
+	if (HasAnimRootMotion() || CurrentRootMotion.HasOverrideVelocity()) 
+	{
+		return Current;
+	}
+
 	const FQuat Target = FRotationMatrix::MakeFromX(-CurrentClimbingNormal).ToQuat();
 	return FMath::QInterpTo(Current, Target, DeltaTime, ClimbingRotationSpeed);
 }
@@ -324,6 +333,69 @@ FHitResult UACFCharacterMovementComponent::CheckFloor() const
 
 bool UACFCharacterMovementComponent::TryClimbUpLedge() const 
 {
-	// TODO: Come back to this after putting in animations
+	if (AnimInstance && LedgeClimbMontage && AnimInstance->Montage_IsPlaying(LedgeClimbMontage)) 
+	{
+		return false;
+	}
+
+	const float UpSpeed = FVector::DotProduct(Velocity, UpdatedComponent->GetUpVector());
+	const bool bIsMovingUp = UpSpeed >= MaxClimbingSpeed / 10;
+
+	if (bIsMovingUp && HasReachedEdge() && CanMoveToLedgeClimbLocation()) 
+	{
+		const FRotator StandRotation = FRotator(0, UpdatedComponent->GetComponentRotation().Yaw, 0);
+		UpdatedComponent->SetRelativeRotation(StandRotation);
+
+		AnimInstance->Montage_Play(LedgeClimbMontage);
+
+		return true;
+	}
+
 	return false;
+}
+
+bool UACFCharacterMovementComponent::HasReachedEdge() const 
+{
+	const UCapsuleComponent* Capsule = CharacterOwner->GetCapsuleComponent();
+	const float TraceDistance = Capsule->GetUnscaledCapsuleRadius() * 2.5f;
+
+	return !EyeHeightTrace(TraceDistance);
+}
+
+bool UACFCharacterMovementComponent::IsLocationWalkable(const FVector& LocationToCheck) const 
+{
+	const FVector CheckEnd = LocationToCheck + (FVector::DownVector * 250.);
+	FHitResult LedgeHit;
+	const bool bHitLedgeGround = GetWorld()->LineTraceSingleByChannel(LedgeHit, LocationToCheck, CheckEnd, ECC_WorldStatic, ClimbQueryParams);
+
+	#if WITH_EDITOR
+	DrawDebugLine(GetWorld(), LocationToCheck, CheckEnd, FColor::Red, false, -1.f, 0, 4.f);
+	#endif
+
+	return bHitLedgeGround && LedgeHit.Normal.Z >= GetWalkableFloorZ();
+}
+
+bool UACFCharacterMovementComponent::CanMoveToLedgeClimbLocation() const 
+{
+	const FVector VerticalOffset = FVector::UpVector * 160.;
+	const FVector HorizontalOffset = UpdatedComponent->GetForwardVector() * 120.;
+	
+	const FVector LocationToCheck = UpdatedComponent->GetComponentLocation() + HorizontalOffset + VerticalOffset;
+	
+	if(!IsLocationWalkable(LocationToCheck))
+	{
+		return false;
+	}
+
+	FHitResult CapsuleHit;
+	const FVector CapsuleStartCheck = LocationToCheck - HorizontalOffset;
+	const auto* Capsule = CharacterOwner->GetCapsuleComponent();
+
+	#if WITH_EDITOR
+	DrawDebugCapsule(GetWorld(), LocationToCheck, Capsule->GetScaledCapsuleHalfHeight(), Capsule->GetScaledCapsuleRadius(), FQuat::Identity, FColor::Red, false, -1, 0, 2.f);
+	#endif
+
+	return !GetWorld()->SweepSingleByChannel(
+			CapsuleHit, CapsuleStartCheck, LocationToCheck, FQuat::Identity, ECC_WorldStatic, Capsule->GetCollisionShape(), ClimbQueryParams);
+
 }
