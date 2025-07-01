@@ -110,6 +110,12 @@ private:
 	UPROPERTY(Category = "Character Movement: Climbing", EditAnywhere, meta = (ClampMin = "1.0", ClampMax = "500.0"))
 	float FloorCheckDistance = 100.f;
 
+	UPROPERTY(Category = "Character Movement: Climbing", EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "200.0"))
+	float ClimbUpVerticalOffset  = 160.f;
+
+	UPROPERTY(Category = "Character Movement: Climbing", EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "200.0"))
+	float ClimbUpHorizontalOffset = 120.f;
+
 	UPROPERTY(Category = "Character Movement: Climbing", EditDefaultsOnly)
 	TObjectPtr<UAnimMontage> LedgeClimbMontage;
 

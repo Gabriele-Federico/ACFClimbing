@@ -20,6 +20,7 @@ void UACFCharacterMovementComponent::BeginPlay()
 void UACFCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	// TODO: Consider if there is a cheap check to do to avoid looking for collisions and allocations
 	SweepAndStoreWallHits();
 }
 
@@ -209,8 +210,9 @@ void UACFCharacterMovementComponent::ComputeSurfaceInfo()
 
 	for (const auto& Hit : CurrentWallHits) 
 	{
-		const FVector End = Start + (Hit.ImpactPoint - Start).GetSafeNormal() * 120;
+		const FVector End = Start + (Hit.ImpactPoint - Start).GetSafeNormal() * 120.f;
 
+		// TODO: Check if in more complex scenarios this is really needed, simple ones like flat surface don't
 		FHitResult AssistHit;
 		GetWorld()->SweepSingleByChannel(AssistHit, Start, End, FQuat::Identity, ECC_WorldStatic, CollisionSphere, ClimbQueryParams);
 
@@ -234,9 +236,7 @@ void UACFCharacterMovementComponent::ComputeClimbingVelocity(float DeltaTime)
 
 	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity()) 
 	{
-		constexpr float FRICTION = .0f;
-		constexpr bool bFLUID = false;
-		CalcVelocity(DeltaTime, FRICTION, bFLUID, BrakingDecelerationClimbing);
+		CalcVelocity(DeltaTime, .0f, false, BrakingDecelerationClimbing);
 	}
 
 	ApplyRootMotionToVelocity(DeltaTime);
@@ -278,8 +278,7 @@ void UACFCharacterMovementComponent::SnapToClimbingSurface(float DeltaTime) cons
 	const FVector ForwardDifference = (CurrentClimbingPosition - Location).ProjectOnTo(Forward);
 	const FVector Offset = -CurrentClimbingNormal * (ForwardDifference.Length() - DistanceFromSurface);
 
-	constexpr bool bSWEEP = true;
-	UpdatedComponent->MoveComponent(Offset * ClimbingSnapSpeed * DeltaTime, Rotation, bSWEEP);
+	UpdatedComponent->MoveComponent(Offset * ClimbingSnapSpeed * DeltaTime, Rotation, true);
 }
 
 float UACFCharacterMovementComponent::GetMaxSpeed() const 
@@ -377,8 +376,8 @@ bool UACFCharacterMovementComponent::IsLocationWalkable(const FVector& LocationT
 
 bool UACFCharacterMovementComponent::CanMoveToLedgeClimbLocation() const 
 {
-	const FVector VerticalOffset = FVector::UpVector * 160.;
-	const FVector HorizontalOffset = UpdatedComponent->GetForwardVector() * 120.;
+	const FVector VerticalOffset = FVector::UpVector * ClimbUpVerticalOffset;
+	const FVector HorizontalOffset = UpdatedComponent->GetForwardVector() * ClimbUpHorizontalOffset;
 	
 	const FVector LocationToCheck = UpdatedComponent->GetComponentLocation() + HorizontalOffset + VerticalOffset;
 	
