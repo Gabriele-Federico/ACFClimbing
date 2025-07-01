@@ -24,7 +24,7 @@ void UACFCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick T
 	SweepAndStoreWallHits();
 }
 
-void UACFCharacterMovementComponent::TryClimbing() 
+void UACFCharacterMovementComponent::TryClimbing_Implementation() 
 {
 	if (CanStartClimbing()) 
 	{
@@ -32,7 +32,7 @@ void UACFCharacterMovementComponent::TryClimbing()
 	}
 }
 
-void UACFCharacterMovementComponent::CancelClimbing() 
+void UACFCharacterMovementComponent::CancelClimbing_Implementation() 
 {
 	bWantsToClimb = false;
 }
@@ -77,11 +77,13 @@ void UACFCharacterMovementComponent::SweepAndStoreWallHits()
 
 bool UACFCharacterMovementComponent::CanStartClimbing() const noexcept
 {
+	const FVector Forward = UpdatedComponent->GetForwardVector();
+
 	for (const FHitResult& Hit : CurrentWallHits) 
 	{
 		const FVector HorizontalNormal = Hit.Normal.GetSafeNormal2D();
 
-		const float HorizontalDot = FVector::DotProduct(UpdatedComponent->GetForwardVector(), -HorizontalNormal);
+		const float HorizontalDot = FVector::DotProduct(Forward, -HorizontalNormal);
 		const float VerticalDot = FVector::DotProduct(Hit.Normal, HorizontalNormal);
 
 		const float HorizontalDegrees = FMath::RadiansToDegrees(FMath::Acos(HorizontalDot));
@@ -135,6 +137,8 @@ void UACFCharacterMovementComponent::OnMovementModeChanged(EMovementMode Previou
 		// TODO: Check if needed
 		//UCapsuleComponent* Capsule = CharacterOwner->GetCapsuleComponent();
 		//Capsule->SetCapsuleHalfHeight(Capsule->GetUnscaledCapsuleHalfHeight() - ClimbingCollisionShrinkAmount);
+	
+		StopMovementImmediately();
 	}
 
 	if (PreviousMovementMode == EMovementMode::MOVE_Custom && PreviousCustomMode == EACFCustomMovementMode::Climbing)
@@ -163,7 +167,7 @@ void UACFCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iteration
 	Super::PhysCustom(DeltaTime, Iterations);
 }
 
-void UACFCharacterMovementComponent::PhysClimbing(float DeltaTime, int32 Iterations) 
+void UACFCharacterMovementComponent::PhysClimbing_Implementation(float DeltaTime, int32 Iterations) 
 {
 	if(DeltaTime < MIN_TICK_TIME)
 	{

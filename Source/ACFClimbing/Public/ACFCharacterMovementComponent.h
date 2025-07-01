@@ -16,8 +16,10 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	UFUNCTION(Server, Reliable)
 	void TryClimbing();
 
+	UFUNCTION(Server, Reliable)
 	void CancelClimbing();
 
 	UFUNCTION(BlueprintPure)
@@ -46,6 +48,7 @@ private:
 
 	void PhysCustom(float DeltaTime, int32 Iterations) override;
 
+	UFUNCTION(Server, Reliable)
 	void PhysClimbing(float DeltaTime, int32 Iterations);
 
 	void ComputeSurfaceInfo();
