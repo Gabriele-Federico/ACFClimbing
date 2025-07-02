@@ -17,6 +17,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 AACFClimbingCharacter::AACFClimbingCharacter(const FObjectInitializer& ObjectInitializer) : 
 	Super(ObjectInitializer.SetDefaultSubobjectClass<UACFCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	bReplicates = true;
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 		

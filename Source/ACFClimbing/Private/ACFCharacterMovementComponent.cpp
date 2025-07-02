@@ -3,10 +3,12 @@
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "ACFCustomMovementModes.h"
+#include <Net/UnrealNetwork.h>
 
 UACFCharacterMovementComponent::UACFCharacterMovementComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	SetIsReplicatedByDefault(true);
 }
 
 void UACFCharacterMovementComponent::BeginPlay()
@@ -37,12 +39,19 @@ void UACFCharacterMovementComponent::CancelClimbing_Implementation()
 	bWantsToClimb = false;
 }
 
-bool UACFCharacterMovementComponent::IsClimbing() const {
+bool UACFCharacterMovementComponent::IsClimbing() const 
+{
 	return MovementMode == EMovementMode::MOVE_Custom && CustomMovementMode == EACFCustomMovementMode::Climbing;
 }
 
-FVector UACFCharacterMovementComponent::GetClimbSurfaceNormal() const {
+FVector UACFCharacterMovementComponent::GetClimbSurfaceNormal() const 
+{
 	return CurrentClimbingNormal;
+}
+
+void UACFCharacterMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	DOREPLIFETIME(UACFCharacterMovementComponent, CurrentClimbingNormal);
 }
 
 void UACFCharacterMovementComponent::SweepAndStoreWallHits() 

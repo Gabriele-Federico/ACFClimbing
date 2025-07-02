@@ -28,6 +28,8 @@ public:
 	UFUNCTION(BlueprintPure)
 	FVector GetClimbSurfaceNormal() const;
 
+	void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
@@ -128,6 +130,7 @@ private:
 	TArray<FHitResult> CurrentWallHits;
 	FCollisionQueryParams ClimbQueryParams;
 
+	UPROPERTY(replicated)
 	FVector CurrentClimbingNormal;
 	FVector CurrentClimbingPosition;
 
