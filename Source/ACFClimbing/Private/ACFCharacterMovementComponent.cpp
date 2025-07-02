@@ -3,7 +3,31 @@
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "ACFCustomMovementModes.h"
-#include <Net/UnrealNetwork.h>
+#include "Net/UnrealNetwork.h"
+
+namespace 
+{
+bool IsLocationWalkable(const UWorld* World, const FVector& LocationToCheck, const float WalkableHeight, const FCollisionQueryParams& QueryParams) noexcept 
+{
+
+	const FVector CheckEnd = LocationToCheck + (FVector::DownVector * 250.);
+	FHitResult LedgeHit;
+	const bool bHitLedgeGround = World->LineTraceSingleByChannel(LedgeHit, LocationToCheck, CheckEnd, ECC_WorldStatic, QueryParams);
+
+	#if WITH_EDITOR
+	DrawDebugLine(World, LocationToCheck, CheckEnd, FColor::Red, false, -1.f, 0, 4.f);
+	#endif
+
+	return bHitLedgeGround && LedgeHit.Normal.Z >= WalkableHeight;
+}
+
+FHitResult CheckFloor(const UWorld* World, const FVector& Location, float MaxDistance, const FCollisionQueryParams& QueryParams) noexcept {
+	FHitResult Hit{};
+	const FVector End = Location + FVector::DownVector * MaxDistance;
+	World->LineTraceSingleByChannel(Hit, Location, End, ECC_WorldStatic, QueryParams);
+	return Hit;
+}
+}
 
 UACFCharacterMovementComponent::UACFCharacterMovementComponent()
 {
@@ -22,15 +46,23 @@ void UACFCharacterMovementComponent::BeginPlay()
 void UACFCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	// TODO: Consider if there is a cheap check to do to avoid looking for collisions and allocations
-	SweepAndStoreWallHits();
+	// Avoid checking for collisions when not climbing or trying to
+	if (IsClimbing()) 
+	{
+		SweepAndStoreWallHits();
+	}
 }
 
 void UACFCharacterMovementComponent::TryClimbing_Implementation() 
 {
-	if (CanStartClimbing()) 
+	SweepAndStoreWallHits();
+
+	const FVector Forward = UpdatedComponent->GetForwardVector();
+	auto HitIt = CurrentWallHits.CreateConstIterator();
+	while (!bWantsToClimb && HitIt) 
 	{
-		bWantsToClimb = true;
+		bWantsToClimb = IsWallClimbable(*HitIt, Forward);
+		++HitIt;
 	}
 }
 
@@ -58,7 +90,7 @@ void UACFCharacterMovementComponent::SweepAndStoreWallHits()
 {
 	const FCollisionShape CollisionShape = FCollisionShape::MakeCapsule(CollisionCapsuleRadius, CollisionCapsuleHalfHeight);
 	
-	const FVector StartOffset = UpdatedComponent->GetForwardVector() * 20;
+	const FVector StartOffset = UpdatedComponent->GetForwardVector() * 20.;
 
 	// Avoid using the same Start/End location for a Sweep, as it doesn't trigger hits on Landscapes.
 	const FVector Start = UpdatedComponent->GetComponentLocation() + StartOffset;
@@ -69,42 +101,29 @@ void UACFCharacterMovementComponent::SweepAndStoreWallHits()
 	
 	#ifdef WITH_EDITOR
 	DrawDebugCapsule(GetWorld(), Start, CollisionCapsuleHalfHeight, CollisionCapsuleRadius, FQuat::Identity, FColor::Green, false, -1, 0, 3);
-
 	for (const auto& Hit : Hits) 
 	{
 		DrawDebugSphere(GetWorld(), Hit.ImpactPoint, 5.f, 8, FColor::Yellow, false, -1.f, 0, .5f);
 	}
 	#endif
+	// Before storing them we could filter non-walls out:
+	// We could either create a custom trace channel or decide if any specific kind of actor should be filtered out, e.g. Pawns
+	CurrentWallHits = MoveTemp(Hits);
 	
-	if (HitWall) {
-		CurrentWallHits = Hits;
-	}
-	else {
-		CurrentWallHits.Reset();
-	}
 }
 
-bool UACFCharacterMovementComponent::CanStartClimbing() const noexcept
+bool UACFCharacterMovementComponent::IsWallClimbable(const FHitResult& Hit, const FVector& Forward) const noexcept
 {
-	const FVector Forward = UpdatedComponent->GetForwardVector();
-
-	for (const FHitResult& Hit : CurrentWallHits) 
-	{
-		const FVector HorizontalNormal = Hit.Normal.GetSafeNormal2D();
-
-		const float HorizontalDot = FVector::DotProduct(Forward, -HorizontalNormal);
-		const float VerticalDot = FVector::DotProduct(Hit.Normal, HorizontalNormal);
-
-		const float HorizontalDegrees = FMath::RadiansToDegrees(FMath::Acos(HorizontalDot));
-
-		const bool bIsCeiling = FMath::IsNearlyZero(VerticalDot);
-
-		if (HorizontalDegrees <= MinHorizontalDegreesToStartClimbing && !bIsCeiling && IsFacingSurface(VerticalDot))
-		{
-			return true;
-		}
-	}
-	return false;
+	const FVector HorizontalNormal = Hit.Normal.GetSafeNormal2D();
+	
+	const float HorizontalDot = FVector::DotProduct(Forward, -HorizontalNormal);
+	const float VerticalDot = FVector::DotProduct(Hit.Normal, HorizontalNormal);
+	
+	const float HorizontalDegrees = FMath::RadiansToDegrees(FMath::Acos(HorizontalDot));
+	
+	const bool bIsCeiling = FMath::IsNearlyZero(VerticalDot);
+	
+	return HorizontalDegrees <= MinHorizontalDegreesToStartClimbing && !bIsCeiling && IsFacingSurface(VerticalDot);	
 }
 
 bool UACFCharacterMovementComponent::EyeHeightTrace(const float TraceDistance) const noexcept
@@ -319,7 +338,7 @@ FQuat UACFCharacterMovementComponent::GetClimbingRotation(float DeltaTime) const
 
 bool UACFCharacterMovementComponent::ClimbDownToFloor() const 
 {
-	FHitResult FloorHit = CheckFloor();
+	FHitResult FloorHit = CheckFloor(GetWorld(), UpdatedComponent->GetComponentLocation(), FloorCheckDistance, ClimbQueryParams);
 	if (!FloorHit.bBlockingHit) 
 	{
 		return false;
@@ -332,15 +351,6 @@ bool UACFCharacterMovementComponent::ClimbDownToFloor() const
 	const bool bIsClimbingFloor = CurrentClimbingNormal.Z > GetWalkableFloorZ();
 
 	return bIsMovingTowardsFloor || (bIsClimbingFloor && bOnWalkableFloor);
-}
-
-FHitResult UACFCharacterMovementComponent::CheckFloor() const 
-{
-	FHitResult Hit{};
-	const FVector Start = UpdatedComponent->GetComponentLocation();
-	const FVector End = Start + FVector::DownVector * FloorCheckDistance;
-	GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, ClimbQueryParams);
-	return Hit;
 }
 
 bool UACFCharacterMovementComponent::TryClimbUpLedge() const 
@@ -374,19 +384,6 @@ bool UACFCharacterMovementComponent::HasReachedEdge() const
 	return !EyeHeightTrace(TraceDistance);
 }
 
-bool UACFCharacterMovementComponent::IsLocationWalkable(const FVector& LocationToCheck) const 
-{
-	const FVector CheckEnd = LocationToCheck + (FVector::DownVector * 250.);
-	FHitResult LedgeHit;
-	const bool bHitLedgeGround = GetWorld()->LineTraceSingleByChannel(LedgeHit, LocationToCheck, CheckEnd, ECC_WorldStatic, ClimbQueryParams);
-
-	#if WITH_EDITOR
-	DrawDebugLine(GetWorld(), LocationToCheck, CheckEnd, FColor::Red, false, -1.f, 0, 4.f);
-	#endif
-
-	return bHitLedgeGround && LedgeHit.Normal.Z >= GetWalkableFloorZ();
-}
-
 bool UACFCharacterMovementComponent::CanMoveToLedgeClimbLocation() const 
 {
 	const FVector VerticalOffset = FVector::UpVector * ClimbUpVerticalOffset;
@@ -394,7 +391,7 @@ bool UACFCharacterMovementComponent::CanMoveToLedgeClimbLocation() const
 	
 	const FVector LocationToCheck = UpdatedComponent->GetComponentLocation() + HorizontalOffset + VerticalOffset;
 	
-	if(!IsLocationWalkable(LocationToCheck))
+	if(!IsLocationWalkable(GetWorld(), LocationToCheck, GetWalkableFloorZ(), ClimbQueryParams))
 	{
 		return false;
 	}

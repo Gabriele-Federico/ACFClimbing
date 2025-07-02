@@ -38,7 +38,7 @@ private:
 
 	void SweepAndStoreWallHits();
 
-	bool CanStartClimbing() const noexcept;
+	bool IsWallClimbable(const FHitResult& Hit, const FVector& Forward) const noexcept;
 
 	bool EyeHeightTrace(float TraceDistance) const noexcept;
 
@@ -73,13 +73,9 @@ private:
 
 	bool ClimbDownToFloor() const;
 
-	FHitResult CheckFloor() const;
-
 	bool TryClimbUpLedge() const;
 
 	bool HasReachedEdge() const;
-
-	bool IsLocationWalkable(const FVector& LocationToCheck) const;
 
 	bool CanMoveToLedgeClimbLocation() const;
 
@@ -119,7 +115,7 @@ private:
 	float ClimbUpVerticalOffset  = 160.f;
 
 	UPROPERTY(Category = "Character Movement: Climbing", EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "200.0"))
-	float ClimbUpHorizontalOffset = 120.f;
+	float ClimbUpHorizontalOffset = 80.f;
 
 	UPROPERTY(Category = "Character Movement: Climbing", EditDefaultsOnly)
 	TObjectPtr<UAnimMontage> LedgeClimbMontage;
